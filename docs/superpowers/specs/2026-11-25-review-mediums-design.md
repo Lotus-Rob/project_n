@@ -405,9 +405,9 @@ calls as the user approved them.
   spanning 3 seconds, then the same dialog ("the graphics card stopped drawing: N frames failed in a row over T s"); no
   device rebuild. A frame that can't be judged (a minimised or hidden window) ends the run like a success. A debug and
   releasedbg flag, `--fail-frames`, makes every acquire fail: the only way to check this path without pulling a card.
-- **A start-up banner:** the log opens with the version, commit (`-dirty` for a tracked local edit, not counting
-  `xmake-requires.lock`), preset and mode, then the OS, CPU count and the GPU's name. The build stamp is rewritten at
-  every configure, so it follows each `project_n` build.
+- **A start-up banner:** the log opens with the version, commit (`-dirty` for any local change, untracked files
+  included, except `xmake-requires.lock`), preset and mode, then the OS, CPU count and the GPU's name. The build stamp
+  is rewritten at every configure, so it follows each `project_n` build.
 - **0002 §12, 0002.1 and `src/AGENTS.md`** say how failures are caught, logged and shown.
 
 Spikes, measured:
@@ -418,8 +418,8 @@ Spikes, measured:
 - S2: under Wine, `abort()` and SIGSEGV lost the last line until `quill::init_signal_handler` was also called for the
   starting thread on Windows (the CRT's handlers are per thread); with it both cases pass.
 - S3: a failed acquire took about 6 µs (483,523 frames in 3.0 s unthrottled), under the 1 ms rule, so the loop pauses
-  10 ms after a failed frame. With the pause, the `--fail-frames` hand check stopped after 292-293 frames in 3.0 s:
-  the time bound decides, not the frame count.
+  10 ms after a failed frame, once a run holds 10 (one transient failure costs no frame). With the pause, the
+  `--fail-frames` hand check stopped after 292-293 frames in 3.0 s: the time bound decides, not the frame count.
 
 Rulings made while building it:
 
@@ -429,13 +429,24 @@ Rulings made while building it:
 - `FirstFailure()`, not the plan's `LastFailure()`: it returns the run's first error.
 - The build stamp sets `always_update_configfiles`: XMake rewrote it only on a recheck, so the banner showed an old hash
   (the plan's call 6 assumed every build configured). It costs three recompiles per commit.
+- Quill's `logger_name` is set to the game's logger name, not left empty as the plan said: an empty one can pick the
+  console-only early logger, so the crash record would miss the file.
 - `app.hpp` keeps including `game.hpp` (no forward declarations in headers, `src/AGENTS.md`).
 - Unverified here: Ctrl-C on native Windows (no Windows host; the crash handler leaves SIGINT alone, and SDL's handler
-  order is commented). On Windows `set_terminate` is per thread, so an uncaught exception on a raw thread aborts
-  without its name (job and logic threads catch at their entries); its fix is in the backlog. `./dev run` reports 255
-  for the game's status 1 (`xmake run` maps every non-zero status): in the backlog.
+  order is commented). On Windows Quill's unhandled-exception filter takes an uncaught exception before the terminate
+  handler runs, so none is named there, the starting thread's included (measured under Wine with a main-thread case; the
+  lines before it and Quill's record still land); job and logic threads catch at their entries, and naming it on
+  Windows is in the backlog. `./dev run` reports 255 for the game's status 1 (`xmake run` maps every non-zero status):
+  in the backlog.
 - Each task's reviews and fixes: one fix pass each, Minors included; release builds of linux-gcc and windows-msvc, and
   the new windows-msvc tests under Wine, passed after every task.
+- The final review (Opus, and GLM-5.3-Flash, DeepSeek V4.1 Flash, GPT-6 Luna and Qwen3.8 Flash) found no Critical or
+  Important issue. Fixed from it: a logic failure is logged by `~App` when an exception escapes the loop first; one
+  `core::Describe` names a caught exception everywhere; both of `main`'s ways out log the exit status; a frame that
+  draws nothing (no swapchain) ends a failing run without a verdict, and the run's first error is forgotten with it;
+  the crash tests also check Quill's own record, so they can't pass by a lucky drain; the save warning and §12's
+  shutdown order say what is true. Rejected: Qwen's "the dialog after `SDL_Quit` never shows" (SDL documents its
+  message box as usable at any time, the start-up path relies on it, and the hand check showed it after SDL stopped).
 
 ## Outcome: R11 (implemented)
 
