@@ -2,6 +2,7 @@
 
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/frame_failures.hpp"
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
@@ -301,7 +302,8 @@ struct Renderer::Impl {
     std::expected<void, core::Error> UploadGlyphs(SDL_GPUCopyPass* copy);
     /// The command buffer holding the last Upload() was submitted, or failed to be, or was cancelled.
     void Submitted(bool submitted);
-    void Report(const std::expected<void, core::Error>& drawn);
+    void Report(const std::expected<void, core::Error>& drawn, bool judged);
+    void ForgetFailures();
     [[nodiscard]] bool Holds(core::SceneId scene) const;
     /// The world pass into the scene target, fitted to `width` by `height`, then the final pass into `target`.
     std::expected<void, core::Error> DrawPasses(
@@ -438,9 +440,8 @@ struct Renderer::Impl {
     std::size_t hudRuns = 0;                 // meshRuns' first runs, which draw the HUD's lines
     std::size_t openRun = 0;                 // the first of meshRuns a quad may join: none of the HUD's takes the world's texts
     std::vector<BarShown> barsShown;         // by entity: how much of each creature's health bar shows, from its label
-    core::RepeatedFailure failures;
-    core::Error firstFailure{}; // the run's first error, which `failures` logged
-    bool failAcquires = false;  // `--fail-frames`
+    core::FrameFailures failures;
+    bool failAcquires = false; // `--fail-frames`
     core::RepeatedFailure overflows;
     core::RepeatedFailure meshOverflows;
     core::RepeatedFailure overlayOverflows;
@@ -1319,16 +1320,25 @@ std::expected<void, core::Error> Renderer::Impl::Frame(const internal::Frame& ac
     return core::Combine(drawn, submitted);
 }
 
-void Renderer::Impl::Report(const std::expected<void, core::Error>& drawn) {
+void Renderer::Impl::Report(const std::expected<void, core::Error>& drawn, bool judged) {
     PN_PROFILE_ZONE();
+    // A failure counts even when nothing could be drawn (no swapchain): an upload or submit that failed is real.
     if (!drawn) {
-        if (failures.Fail()) {
-            firstFailure = drawn.error();
+        if (failures.Fail(drawn.error())) {
             PN_LOG_ERROR("frames are failing: {}", drawn.error().message);
         }
     }
-    else if (const u64 failed = failures.Succeed(); failed > 0) {
+    else if (!judged) {
+        ForgetFailures();
+    }
+    else if (const u64 failed = failures.End(); failed > 0) {
         PN_LOG_WARNING("frames are drawn again after {} failed", failed);
+    }
+}
+
+void Renderer::Impl::ForgetFailures() {
+    if (const u64 failed = failures.End(); failed > 0) {
+        PN_LOG_WARNING("{} failed frames ended without a verdict: the window can't be drawn to", failed);
     }
 }
 
@@ -1579,12 +1589,12 @@ void Renderer::Acquire() {
     PN_PROFILE_ZONE();
     PN_ASSERT(!m_impl->frame, "Acquire() twice without a Draw() between");
     if (m_impl->failAcquires) {
-        m_impl->Report(std::unexpected{ core::Error{ "frames fail on request" } });
+        m_impl->Report(std::unexpected{ core::Error{ "frames fail on request" } }, true);
         return;
     }
     std::expected<internal::Frame, core::Error> acquired = internal::AcquireFrame(m_impl->device.get(), m_impl->window);
     if (!acquired) {
-        m_impl->Report(std::unexpected{ std::move(acquired.error()) });
+        m_impl->Report(std::unexpected{ std::move(acquired.error()) }, true);
         return;
     }
     m_impl->frame = *acquired;
@@ -1595,9 +1605,7 @@ void Renderer::FailAcquires() {
 }
 
 void Renderer::ForgetFailures() {
-    if (const u64 failed = m_impl->failures.Succeed(); failed > 0) {
-        PN_LOG_WARNING("{} failed frames ended without a verdict: the window can't be drawn to", failed);
-    }
+    m_impl->ForgetFailures();
 }
 
 u64 Renderer::FailedFrames() const {
@@ -1605,7 +1613,7 @@ u64 Renderer::FailedFrames() const {
 }
 
 const core::Error& Renderer::FirstFailure() const {
-    return m_impl->firstFailure;
+    return m_impl->failures.First();
 }
 
 void Renderer::Draw(
@@ -1621,16 +1629,20 @@ void Renderer::Draw(
     }
     const internal::Frame acquired = *m_impl->frame;
     m_impl->frame.reset();
-    m_impl->Report(m_impl->Frame(
-        acquired,
-        { .snapshot = &snapshot,
-          .extra = extra,
-          .hud = hud,
-          .view = &view,
-          .width = acquired.width,
-          .height = acquired.height },
-        jobs
-    ));
+    // Without a swapchain texture (the window can't be shown) nothing is drawn, so the frame says nothing about the card.
+    m_impl->Report(
+        m_impl->Frame(
+            acquired,
+            { .snapshot = &snapshot,
+              .extra = extra,
+              .hud = hud,
+              .view = &view,
+              .width = acquired.width,
+              .height = acquired.height },
+            jobs
+        ),
+        acquired.swapchain != nullptr
+    );
 }
 
 void Renderer::SetTextOptions(const TextOptions& text) {

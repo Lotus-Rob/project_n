@@ -106,7 +106,8 @@ public:
     void ForgetFailures();
     /// How many frames in a row have failed (0 once one is drawn, or after ForgetFailures()).
     [[nodiscard]] u64 FailedFrames() const;
-    /// The first error of the current run of failed frames, as logged; empty message when none has failed.
+    /// The first error of the current run of failed frames, as logged; empty message when none has failed, and again once the
+    /// run ends (a frame drawn, or ForgetFailures()).
     [[nodiscard]] const core::Error& FirstFailure() const;
     /// Draws `snapshot` into the frame Acquire() acquired as `view` shows it, and presents it. Uploads its instances only when
     /// it isn't the snapshot drawn last; a snapshot of a scene it doesn't hold draws the backdrop only. The seals on the
