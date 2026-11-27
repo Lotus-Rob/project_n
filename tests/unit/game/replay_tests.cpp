@@ -593,8 +593,8 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
 TEST_CASE("a replay recorded across a month's jump on a route plays back exploring the same tiles") {
     // A walk-to east to a tile past the start city's sight, then a month step (M while paused) that carries the cultivator
     // to the route's end in one jump: only the route's own exploring uncovers the tiles it passed, so (2, 2), within
-    // sight of the route's tile in column 2 of the top row alone, is explored; a fresh game plays it back with every hash
-    // matching and the same tiles explored.
+    // sight of the route's tiles between its ends but of neither end, is explored; a fresh game plays it back with every
+    // hash matching and the same tiles explored.
     constexpr u64 BURST = 7;
     constexpr u32 MAX_BURSTS = 100;
     constexpr core::Vec2 EAST{ .x = 4.0F, .y = 0.0F }; // in tiles from the start city's
