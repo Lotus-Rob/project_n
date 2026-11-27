@@ -921,7 +921,8 @@ def cmd_test(args):
     parallel, one process per test file; with `--test` or doctest arguments the binary runs once instead, keeping the
     cases of the test file `--test` names, else the cases with it in their name. A name that is no suite, fuzz suite or
     test program (`headless_bench`, `reference_tests`) is refused. A `--test` that matches no test file and no case
-    name fails, naming the closest files and cases. A fuzz suite replays its seeds once (`-runs=0`) and only under linux-clang with
+    name fails, naming the closest files and cases; a container run is handed the `--test` as given and checks it there,
+    against its own build's cases. A fuzz suite replays its seeds once (`-runs=0`) and only under linux-clang with
     AddressSanitizer. A skipped long run or measurement is run by name with `--no-skip`, in double quotes as names
     hold apostrophes."""
     if getattr(args, "list_tests", False):  # internal callers build their own Namespace
