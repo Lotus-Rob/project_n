@@ -373,14 +373,16 @@ using Row = std::array<u64, PINNED_SAMPLES>;
 using Table = std::array<Row, PINNED_FUNCTIONS>;
 
 // One table per toolchain whose libm and code generation may round differently; keys that agree bit for bit share one.
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && defined(_M_X64)
 constexpr std::string_view TOOLCHAIN = "msvc";
 #elif defined(__clang__) && defined(__aarch64__)
 constexpr std::string_view TOOLCHAIN = "clang-arm64";
-#elifdef __clang__
+#elif defined(__clang__) && defined(__x86_64__)
 constexpr std::string_view TOOLCHAIN = "clang-x64";
-#else
+#elif defined(__GNUC__) && defined(__x86_64__)
 constexpr std::string_view TOOLCHAIN = "gcc-x64";
+#else
+#error "no core::math table key for this compiler and architecture: add one, then its table"
 #endif
 
 // msvc, clang-x64 and gcc-x64 agree on every bit, so they share the table below; clang-arm64 has none yet.
