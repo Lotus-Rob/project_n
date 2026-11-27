@@ -25,9 +25,9 @@ namespace core::log {
 /// nothing. Messages still queued when the program exits are written before it ends, and so are
 /// those queued when it dies on SIGABRT, SIGFPE, SIGILL, SIGSEGV (SIGBUS where it exists), an
 /// unhandled Windows exception, or an uncaught C++ exception, which is named in the log first.
-/// On Windows that last part holds only for the thread that started the log (the C++ runtime keeps
-/// the terminate handler per thread), and Quill's unhandled-exception filter replaces the
-/// runtime's, so there the exception is not named.
+/// On Windows that last part doesn't hold on any thread: Quill's unhandled-exception filter takes
+/// the exception before the C++ runtime's terminate handler runs, so there the exception is not
+/// named; the lines before it and Quill's record of the exception still land.
 void Start(const std::filesystem::path& directory);
 
 /// The logger every `PN_LOG_*` macro writes to; use the macros instead. Before Start(), it writes

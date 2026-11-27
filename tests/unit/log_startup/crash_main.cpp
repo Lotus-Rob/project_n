@@ -33,6 +33,9 @@ struct Reentrant : std::exception {
     if (kind == "reenter") {
         throw Reentrant{};
     }
+    if (kind == "main") {
+        throw std::runtime_error{ "boom on the main thread" };
+    }
     if (kind == "segv") {
         std::raise(SIGSEGV);
     }
