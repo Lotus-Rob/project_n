@@ -2715,9 +2715,9 @@ MEASURE_RUNS = {"world": (["--world", "--camera-path", "--travel-share", str(MEA
 MEASURE_WORKERS = 2
 # Fixed conditions: the display's native size, and a present the display's refresh doesn't pace.
 MEASURE_FLAGS = ["--fullscreen", "--workers", str(MEASURE_WORKERS), "--unpaced"]
-# The arena runs' numbers (each the median of three runs' medians) with Tracy built without forced callstacks, on the
+# The arena runs' numbers (each the median of three runs) with Tracy built without forced callstacks, on the
 # 165 Hz display, printed beside the new ones: main-thread work, as the frame time sits at the display's interval.
-MEASURE_EARLIER = {"burst": "2.43 ms median work, 6.2 ms worst (main thread)",
+MEASURE_BASELINE = {"burst": "2.43 ms median work, 6.2 ms worst (main thread)",
                    "swords": "2.27/5.92/7.31 ms (median/p99/worst work, main thread)",
                    "seals": "2.47/5.94/7.48 ms (median/p99/worst work, main thread)"}
 HITCH_MS = 16.7  # a frame whose work is longer misses a 60 Hz display's refresh
@@ -3027,7 +3027,7 @@ def measure_table(results, shimmer, cloud, ground):
         notes = [f"display {result.display}", *([note] if (note := latency_summary(result.latencies)) else []),
                  *([f"display delay {result.delay[0]:.1f} ms ({result.delay[1]:.1f} to {result.delay[2]:.1f})"]
                    if result.delay else []),
-                 *([f"baseline: {MEASURE_EARLIER[result.name]}"] if result.name in MEASURE_EARLIER else []),
+                 *([f"baseline: {MEASURE_BASELINE[result.name]}"] if result.name in MEASURE_BASELINE else []),
                  *([f"untrusted: {'; '.join(result.reasons)}"] if result.reasons else [])]
         first_of_run = True
         for segment in result.segments:
@@ -3078,7 +3078,7 @@ def cmd_measure(args):
     (`—` below P99_FRAMES) and worst; the GPU's share (see `paced`); hitches (work over HITCH_MS, each with its three
     largest zones); and beside each run its display (the log's last display line: where the window ended), the input
     latency (median and spread over the world run's presses), the display delay (the log's `display delay:` line),
-    MEASURE_EARLIER and trust. With `world`, `reference` runs first (Linux, quiet, its output printed only when a case
+    MEASURE_BASELINE and trust. With `world`, `reference` runs first (Linux, quiet, its output printed only when a case
     fails, which leaves the shimmer unmeasured and the runs go on) for the world's, the clouds' and the painted
     ground's shimmer, in the table's first line. A run whose log shows a pause, a camera path warning or an unfinished
     path is untrusted and `measure` exits 1. Captures, exports and logs go to `build/measure/<time>/`, removed unless
