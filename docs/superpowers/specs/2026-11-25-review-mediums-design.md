@@ -180,6 +180,7 @@ callstacks or fibers, then a new `measure` baseline (run alone: it takes the dis
 shared-routes and added by the user (2026-11-25): `project_n test --test <name>` whose name matches no doctest case
 runs nothing and reports success (seen with `--test route_graph_tests`); it fails instead, naming the cases it could
 have meant (test: `selftest`, beside `test_a_test_file_of_another_suite_is_refused`). Any time; touches no game code.
+**Implemented** (Outcome: R11, below).
 
 **R12. Design and roadmap docs** (light; plan only). DESIGN-DOCS-01: 0001 sweep (removed agents and skills, the process
 now run by superpowers). DESIGN-DOCS-03: 0002's unbuilt rules marked as such (arenas, command merging). SPECS-ROADMAP-03:
@@ -234,7 +235,7 @@ waits for D1 and D2 per decision 4) and this work. Within this work:
 | Step | Areas | Needs | Why here | Status |
 |---|---|---|---|---|
 | 1 | R1 | none | every later session loads less; shared-routes' tasks then add one-line rules (tell its next dispatch) | done |
-| 2 | R2, R11 (parallel) | R1 | R2 is small and stops start-up and save failures; R11 shares no files |  |
+| 2 | R2, R11 (parallel) | R1 | R2 is small and stops start-up and save failures; R11 shares no files | done |
 | 3 | R3 | R2 (`main.cpp`, `app.cpp`) | the silent-failure class |  |
 | 4 | R4 | R3 (the save job's error path) | before shared-routes stage 2 changes the save layout |  |
 | 5 | R5, R6 (parallel) | R4 for R5 (`host.cpp`) | concrete bugs |  |
@@ -376,6 +377,86 @@ Rulings made while building it:
 - Rejected from it: including `<cstdlib>` in `log.cpp` for `std::atexit` (`pch.hpp` holds it, and a `.cpp` includes no
   standard header). Accepted: a console test run straight from a terminal sends doctest's output to its new console;
   under `xmake test` and CI the streams are redirected and unaffected.
+
+## Outcome: R11 (implemented)
+
+R11's plan (`docs/superpowers/plans/2026-11-26-review-r11-tests-tooling.md`, nine tasks in three waves, the Tracy task
+alone and last) is built.
+
+- **Pinned `core::math` bits** (TESTS-CORE-01): 20 named samples each for `Sin`, `Cos`, `Exp`, `Log`, `Pow` and `Atan2`,
+  compared by bit pattern against a table per toolchain; a toolchain with no table fails and prints its table. Spike S1,
+  measured: the generated tables of linux-gcc, linux-clang and windows-msvc (under Wine, debug builds) are
+  byte-identical, so the three share one table. clang-arm64's is filled from the pull request's macOS CI log.
+- **Replay sessions on the small test data** (TESTS-GAME-01): the replay file's median went from 29.5 s to 14.0 s; the
+  world-scene case and the skipped workers case keep the shipped data. Each guarded property was shown to fail with
+  its guard's subject broken (walk-to, exploring, arena, cells, painted, no-save); the exploring case was rewritten
+  across a month's jump because the first version passed with `ExploreRoute` doing nothing.
+- **Shared game test helpers** (TESTS-GAME-02): the local copies moved into `tests/support/`, each variant under its
+  own name (`LivingFoxes`, `SameEventsIgnoringTick`, `StepMonthFrozen`, `PublishedAt`, `PublishedSnapshot`);
+  `game_tests` has 388 cases before and after on linux-clang and windows-msvc.
+- **Font coverage** (X-TEXT-L10N-01): every codepoint of `strings.yaml` and `names.yaml` (both languages, characters
+  and pinyin) is looked up in the shipped font, a miss naming its codepoint and its string's key. No glyph is missing.
+- **`test --test`** matching no test file and no case now fails, naming the closest files and cases; the listing is
+  taken with the run's own doctest arguments, so a skipped case named with `--no-skip` still runs, and a container run
+  is handed the name as given and checks it against its own build (the first version passed the computed filter in,
+  so the check never ran there).
+- **`check --sanitizers`** says which sanitizer check only built (windows-msvc's AddressSanitizer off Windows) rather
+  than "every supported sanitizer"; **`reference`** fails on a committed picture no case draws, not only under
+  `--update`; **`build`** removes the 0-byte outputs a stopped build left in its own folder (a sanitizer build its own,
+  never the plain one) before XMake takes them as up to date. `RendererFor` parses the manifest and the strings once
+  per reference case.
+- **Tracy without forced callstacks or fibers** (GAP1-THIRD-PARTY-LIBRARY-USAGE-01), and `measure`'s baseline
+  (`MEASURE_BASELINE`, shown as "baseline:") retaken with it: below.
+
+Measurements and the rulings they led to:
+
+- **The float-cast-overflow flag went to gcc, not clang** (GAP2-REPO-CONFIG-FILES-01; this spec and the plan named
+  clang). Spike S2, measured with a throwaway `static_cast<int32_t>` of 1e20: clang's `-fsanitize=undefined` already
+  reports it; gcc's does not (the run passed with no report) until `-fsanitize=float-cast-overflow` is added, when it
+  reports "1e+20 is outside the range of representable values of type 'int'" and the run fails
+  (`UBSAN_OPTIONS=halt_on_error=1`, already set). The flag is on `pixi-gcc`'s undefined builds only; gcc's whole
+  undefined run then passed with no finding.
+- **S3 uses the swords run's `work` median, not its frame median:** every frame median sat at 6.06 ms, the 165 Hz
+  display's interval (the runs are paced by the display), so a frame delta cannot show a zone's cost.
+- **The baseline is an interleaved A/B from one quiet sitting** (the user, 2026-11-27: measure only when they say the
+  machine is quiet and the screen free). The plan's before and after runs, a night apart, could not be compared: swords
+  work medians 0.97 to 0.98 ms before against 1.79 to 2.40 ms after, while the old configuration rebuilt in the after
+  session read 2.62 ms, so the machine's state had changed, not the build (the first before runs were also unusable:
+  window unfocused, one at about 59 Hz). A first re-baseline stopped at its own rule (the first old run's swords work
+  median over 1.5 ms: it read 2.20 ms with another session's compiler at 100% of a core). The sitting that counts
+  alternated old and new three times, both built beforehand, the load noted before each run (1-minute load 0.5 to
+  0.9), all six runs trusted, on the 165.1 Hz display:
+
+  | Work, main thread, ms (median/p99/worst) | burst | swords | seals |
+  |---|---|---|---|
+  | old 1 | 1.44/4.38/4.79 | 1.32/4.30/5.69 | 1.31/4.35/5.43 |
+  | old 2 | 1.35/4.22/4.60 | 1.30/4.18/4.87 | 1.29/4.07/5.12 |
+  | old 3 | 1.33/4.37/5.16 | 1.28/4.22/5.08 | 1.30/4.27/4.84 |
+  | new 1 | 1.29/4.26/5.45 | 1.25/4.15/5.48 | 1.26/4.18/4.80 |
+  | new 2 | 1.28/4.11/4.52 | 1.23/4.11/4.75 | 1.26/4.03/4.84 |
+  | new 3 | 1.29/4.31/4.63 | 1.24/4.12/4.77 | 1.26/4.31/4.87 |
+  | `MEASURE_BASELINE` (new, each column's median) | 1.29/4.26/4.63 | 1.24/4.12/4.77 | 1.26/4.18/4.84 |
+
+- **S3, the zone cost:** swords work median 1.30 ms old (1.28 to 1.32) against 1.24 ms new (1.23 to 1.25); the 0.06 ms
+  between them is beyond either side's spread and the ranges do not overlap. The measured window holds 120.3
+  main-thread zones a frame (the first count, 246, took every thread over the whole capture), so forced callstacks and
+  fibers together cost a zone about 0.5 µs, which `profile.hpp` now states. It is a difference, not a zone's whole
+  cost, and its margin over the spread is small (0.02 ms). Seen beside it, not part of S3: the uncapped start-up
+  second ran about 11,300 frames old against about 61,700 new.
+- The machine read about 1.3 ms of work in that sitting against 0.97 ms the first evening: the baseline is for
+  comparing runs of one sitting, as `measure` always was.
+- `Pow(2, 1024)` is finite (0x7fefffffffffff2a), not infinity: `Exp(1024 · Log 2)` lands just under the largest
+  double, which is `Pow`'s contract; the sample is named for it.
+- The manifest and strings parses saved no wall time (`reference` 16 s warm before and after): they cost milliseconds
+  beside the GPU work. The change stays for the single parse, not for speed.
+- The "reference drift guard" backlog item was already closed by existing code (`reference` prints pictures that
+  changed within tolerance); nothing was added for it.
+- Task 9's implementer worked in the feature worktree itself: it ran alone and last, and its own worktree would have
+  built releasedbg and Tracy cold twice.
+- The lock's macOS section was renamed by hand (the two `tracy-libdl` hashes the Linux and Windows builds produced);
+  the pull request's macOS job confirms it.
+- Each task's reviews: one fix pass each, Minors included; release builds of linux-gcc and windows-msvc passed after
+  each wave and at the branch head.
 
 ## The findings and their areas
 
