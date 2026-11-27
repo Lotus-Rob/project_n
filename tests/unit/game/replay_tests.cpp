@@ -509,30 +509,6 @@ TEST_CASE("a world clock reaching its month's end runs the month step through th
     CHECK(session.host.Months() == 1);
 }
 
-/// A save of the world scene with the player's cultivator alone in it, on the start city's tile centre of `data`'s map.
-std::vector<std::byte> CultivatorOnTheMap(const core::GameData& data) {
-    core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
-    const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
-    const core::Vec2 start = data.world->StartCentre();
-    state[game::ACTIVE].Entities().emplace<game::Body>(entity, start, start);
-    return test::ArenaSave(
-        state,
-        player,
-        std::nullopt,
-        std::nullopt,
-        std::nullopt,
-        game::WORLD_SCENE,
-        test::WORLD_VERSION,
-        test::ACTIVE_VERSION,
-        {},
-        game::Travel{},
-        std::nullopt,
-        game::Relationships{},
-        {},
-        &data
-    );
-}
-
 TEST_CASE("a replay with walk-tos on the world map plays back with the same hashes") {
     // The cultivator walks a route east, a second walk-to turns it mid-route, held movement cancels that, and a third sends
     // it back to the start city: a fresh game plays it back with every hash matching, routes and all.
@@ -546,7 +522,7 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
     const core::GameData data = test::SmallData();
     const f32 tile = data.world->TileSize();
     const core::Vec2 start = data.world->StartCentre();
-    const std::vector<std::byte> begin = CultivatorOnTheMap(data);
+    const std::vector<std::byte> begin = test::LoneCultivatorSave(data, data.world->StartCentre());
     // The destinations barely fit the small map: a smaller one fails here, not as a walk-to that sets no route.
     const u32 startTile = data.world->TileAt(start);
     REQUIRE((startTile % data.world->Columns()) + static_cast<u32>(EAST.x) < data.world->Columns());
@@ -603,7 +579,7 @@ TEST_CASE("a replay recorded across a month's jump on a route plays back explori
     const f32 tile = map.TileSize();
     const core::Vec2 start = map.StartCentre();
     const core::Vec2 target = start + (EAST * tile);
-    const std::vector<std::byte> begin = CultivatorOnTheMap(data);
+    const std::vector<std::byte> begin = test::LoneCultivatorSave(data, data.world->StartCentre());
     const std::vector<u32> startTile{ map.TileAt(start) };
     const u32 endTile = map.TileAt(target);
     const u32 passed =

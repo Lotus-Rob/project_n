@@ -1512,7 +1512,7 @@ struct TravelWorld {
 };
 
 /// A cultivator of `data` for the player, standing at `foot` in `state`'s active domain.
-core::StableId CultivatorAt(core::State& state, const core::GameData& data, core::Vec2 foot) {
+core::StableId AddCultivator(core::State& state, const core::GameData& data, core::Vec2 foot) {
     const auto [stableId, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
     core::Registry& entities = state[game::ACTIVE].Entities();
     entities.emplace<game::Body>(entity, foot, foot);
@@ -1548,7 +1548,7 @@ TravelWorld TravelWorldOf(
     const Road road = FirstRoad(*world.map);
     core::State state{ game::DOMAINS, TRAVEL_SEED };
     if (player) {
-        world.player = CultivatorAt(state, data, world.map->TileCentre(road.tiles.front()));
+        world.player = AddCultivator(state, data, world.map->TileCentre(road.tiles.front()));
     }
     game::Travel travel;
     for (const Departure& departure : departures) {
